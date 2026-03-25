@@ -1,11 +1,16 @@
 use soroban_sdk::{contracttype, Address, String};
 
+use crate::multisig::MultisigConfig;
+
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    Admin,                // -> Address
-    Contributor(Address), // -> ContributorData
-    GitHubIndex(String),  // -> Address
+    Admin,
+    Contributor(Address),
+    GitHubIndex(String),
+    MultisigConfig,
+    Proposal(u64),
+    NextProposalId,
 }
 
 #[contracttype]
