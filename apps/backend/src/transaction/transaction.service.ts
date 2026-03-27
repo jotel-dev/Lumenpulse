@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TransactionDto, TransactionType, TransactionStatus } from './dto/transaction.dto';
+import {
+  TransactionDto,
+  TransactionType,
+  TransactionStatus,
+} from './dto/transaction.dto';
 import { getMockTransactions } from './mocks/mock-transactions';
 
 interface HorizonOperation {
@@ -9,7 +13,32 @@ interface HorizonOperation {
   created_at: string;
   transaction_hash: string;
   source_account: string;
-  [key: string]: any;
+  from?: string;
+  to?: string;
+  into?: string;
+  amount?: string;
+  amount_charged?: string;
+  asset_type?: string;
+  asset_code?: string;
+  asset_issuer?: string;
+  [key: string]: unknown;
+}
+
+interface HorizonResponse {
+  _embedded: {
+    records: HorizonTransaction[];
+  };
+  _links: {
+    next?: {
+      href: string;
+    };
+  };
+}
+
+interface HorizonErrorResponse {
+  detail?: string;
+  title?: string;
+  status?: number;
 }
 
 interface HorizonTransaction {
@@ -18,7 +47,12 @@ interface HorizonTransaction {
   successful: boolean;
   memo?: string;
   fee_charged?: string;
-  operations: HorizonOperation[];
+}
+
+interface OperationsResponse {
+  _embedded?: {
+    records: HorizonOperation[];
+  };
 }
 
 @Injectable()
@@ -29,12 +63,13 @@ export class TransactionService {
 
   constructor(private configService: ConfigService) {
     const network = this.configService.get('STELLAR_NETWORK', 'testnet');
-    this.horizonUrl = network === 'testnet' 
-      ? 'https://horizon-testnet.stellar.org'
-      : 'https://horizon.stellar.org';
-    
-    // Check if we should use mock data (can be set via environment variable)
-    this.useMockData = this.configService.get('USE_MOCK_TRANSACTIONS', 'true') === 'true';
+    this.horizonUrl =
+      network === 'testnet'
+        ? 'https://horizon-testnet.stellar.org'
+        : 'https://horizon.stellar.org';
+
+    this.useMockData =
+      this.configService.get('USE_MOCK_TRANSACTIONS', 'true') === 'true';
     if (this.useMockData) {
       this.logger.log('Using mock transaction data for testing');
     }
@@ -46,49 +81,57 @@ export class TransactionService {
     cursor?: string,
   ): Promise<{ transactions: TransactionDto[]; nextPage?: string }> {
     this.logger.log(`Fetching transaction history for ${publicKey}`);
-    
-    // Use mock data if enabled
+
     if (this.useMockData) {
       this.logger.log('Returning mock transaction data');
       return getMockTransactions(limit, cursor);
     }
 
     try {
-      // Build URL for account transactions
       let url = `${this.horizonUrl}/accounts/${publicKey}/transactions?order=desc&limit=${limit}`;
       if (cursor) {
         url += `&cursor=${cursor}`;
       }
 
       const response = await fetch(url);
-      const data = await response.json();
+      const data = (await response.json()) as
+        | HorizonResponse
+        | HorizonErrorResponse;
 
       if (!response.ok) {
-        throw new Error(data.detail || 'Failed to fetch transactions');
+        const errorDetail = (data as HorizonErrorResponse).detail;
+        const errorMessage = errorDetail || 'Failed to fetch transactions';
+        throw new Error(errorMessage);
       }
 
-      const transactions = await this.processTransactions(data._embedded.records);
+      const horizonData = data as HorizonResponse;
+      const transactions = await this.processTransactions(
+        horizonData._embedded.records,
+      );
       let nextPage: string | undefined;
-      
-      if (data._links?.next?.href) {
-        const nextUrl = new URL(data._links.next.href);
+
+      if (horizonData._links?.next?.href) {
+        const nextUrl = new URL(horizonData._links.next.href);
         nextPage = nextUrl.searchParams.get('cursor') || undefined;
       }
 
       return { transactions, nextPage };
     } catch (error) {
-      this.logger.error(`Failed to fetch transactions: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to fetch transactions: ${errorMessage}`);
       return { transactions: [] };
     }
   }
 
-  private async processTransactions(records: HorizonTransaction[]): Promise<TransactionDto[]> {
+  private async processTransactions(
+    records: HorizonTransaction[],
+  ): Promise<TransactionDto[]> {
     const transactions: TransactionDto[] = [];
 
     for (const record of records) {
-      // Fetch operations for this transaction
       const operations = await this.getTransactionOperations(record.id);
-      
+
       for (const operation of operations) {
         const transaction = this.mapToTransactionDto(operation, record);
         if (transaction) {
@@ -100,14 +143,20 @@ export class TransactionService {
     return transactions;
   }
 
-  private async getTransactionOperations(transactionId: string): Promise<HorizonOperation[]> {
+  private async getTransactionOperations(
+    transactionId: string,
+  ): Promise<HorizonOperation[]> {
     try {
       const url = `${this.horizonUrl}/transactions/${transactionId}/operations`;
       const response = await fetch(url);
-      const data = await response.json();
+      const data = (await response.json()) as OperationsResponse;
       return data._embedded?.records || [];
     } catch (error) {
-      this.logger.error(`Failed to fetch operations for ${transactionId}: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Failed to fetch operations for ${transactionId}: ${errorMessage}`,
+      );
       return [];
     }
   }
@@ -128,7 +177,9 @@ export class TransactionService {
       from: operation.source_account || operation.from || '',
       to: operation.to || operation.into || '',
       date: operation.created_at,
-      status: transaction.successful ? TransactionStatus.SUCCESS : TransactionStatus.FAILED,
+      status: transaction.successful
+        ? TransactionStatus.SUCCESS
+        : TransactionStatus.FAILED,
       transactionHash: transaction.id,
       memo: transaction.memo,
       fee: transaction.fee_charged,
@@ -159,15 +210,17 @@ export class TransactionService {
   }
 
   private getAmountFromOperation(operation: HorizonOperation): string {
-    return operation.amount || operation.amount_charged || '0';
+    const amount = operation.amount ?? operation.amount_charged;
+    return amount ?? '0';
   }
 
   private getAssetCode(operation: HorizonOperation): string {
     if (operation.asset_type === 'native') return 'XLM';
-    return operation.asset_code || operation.asset_issuer ? 'Custom' : 'XLM';
+    const assetCode = operation.asset_code;
+    return assetCode ?? (operation.asset_issuer ? 'Custom' : 'XLM');
   }
 
   private getAssetIssuer(operation: HorizonOperation): string | null {
-    return operation.asset_issuer || null;
+    return operation.asset_issuer ?? null;
   }
 }

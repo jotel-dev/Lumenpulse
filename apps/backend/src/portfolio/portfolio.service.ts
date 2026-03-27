@@ -143,9 +143,9 @@ export class PortfolioService {
   }
 
   /**
- * Get portfolio summary (latest snapshot) for the mobile dashboard
- * Returns total USD value and individual asset balances
- */
+   * Get portfolio summary (latest snapshot) for the mobile dashboard
+   * Returns total USD value and individual asset balances
+   */
   async getPortfolioSummary(
     userId: string,
   ): Promise<PortfolioSummaryResponseDto> {
@@ -157,7 +157,8 @@ export class PortfolioService {
       relations: ['stellarAccounts'],
     });
 
-    const hasLinkedAccount = user?.stellarAccounts && user.stellarAccounts.length > 0;
+    const hasLinkedAccount =
+      user?.stellarAccounts && user.stellarAccounts.length > 0;
 
     if (!hasLinkedAccount) {
       this.logger.log(`User ${userId} has no linked Stellar accounts`);

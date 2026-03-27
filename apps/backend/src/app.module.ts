@@ -70,7 +70,7 @@ const appLogger = new Logger('TypeORM');
     EmailModule,
     PortfolioModule,
     SnapshotsModule,
-    TransactionModule
+    TransactionModule,
   ],
   controllers: [AppController, TestController, TestExceptionController],
   providers: [

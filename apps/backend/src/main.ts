@@ -23,7 +23,11 @@ function getCorsOrigin(): string | string[] {
     );
   }
 
-  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8081'];
+  return [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:8081',
+  ];
 }
 
 async function bootstrap() {

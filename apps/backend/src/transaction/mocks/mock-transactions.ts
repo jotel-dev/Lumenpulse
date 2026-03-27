@@ -1,4 +1,8 @@
-import { TransactionDto, TransactionType, TransactionStatus } from '../dto/transaction.dto';
+import {
+  TransactionDto,
+  TransactionType,
+  TransactionStatus,
+} from '../dto/transaction.dto';
 
 export const mockTransactions: TransactionDto[] = [
   {
@@ -148,23 +152,27 @@ export const getMockTransactions = (
   cursor?: string,
 ): { transactions: TransactionDto[]; nextPage?: string } => {
   let transactions = [...mockTransactions];
-  
+
   // Sort by date descending (newest first)
-  transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  
+  transactions.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
+
   // Handle cursor (offset)
   if (cursor) {
-    const cursorIndex = transactions.findIndex(t => t.id === cursor);
+    const cursorIndex = transactions.findIndex((t) => t.id === cursor);
     if (cursorIndex !== -1) {
       transactions = transactions.slice(cursorIndex + 1);
     }
   }
-  
+
   // Apply limit
   const hasMore = transactions.length > limit;
   const limitedTransactions = transactions.slice(0, limit);
-  const nextPage = hasMore ? limitedTransactions[limitedTransactions.length - 1]?.id : undefined;
-  
+  const nextPage = hasMore
+    ? limitedTransactions[limitedTransactions.length - 1]?.id
+    : undefined;
+
   return {
     transactions: limitedTransactions,
     nextPage,

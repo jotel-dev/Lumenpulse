@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards, Req, Param } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TransactionService } from './transaction.service';
 import { UsersService } from '../users/users.service';
@@ -10,6 +15,16 @@ interface RequestWithUser extends Request {
     id: string;
     email?: string;
   };
+}
+
+interface StellarAccountWithPrimary {
+  id: string;
+  publicKey: string;
+  label?: string;
+  isPrimary?: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 @ApiTags('transactions')
@@ -34,13 +49,12 @@ export class TransactionController {
     @Query('limit') limit?: number,
     @Query('cursor') cursor?: string,
   ): Promise<TransactionHistoryResponseDto> {
-    // Get user's primary Stellar account
     const accounts = await this.usersService.getStellarAccounts(req.user.id);
-    
-    // Use primary account or first account
-    // Check for isPrimary property (it exists on the DTO)
-    const primaryAccount = accounts.find(a => (a as any).isPrimary) || accounts[0];
-    
+    const typedAccounts = accounts as StellarAccountWithPrimary[];
+
+    const primaryAccount =
+      typedAccounts.find((a) => a.isPrimary === true) || typedAccounts[0];
+
     if (!primaryAccount) {
       return {
         transactions: [],
@@ -48,11 +62,12 @@ export class TransactionController {
       };
     }
 
-    const { transactions, nextPage } = await this.transactionService.getTransactionHistory(
-      primaryAccount.publicKey,
-      limit || 50,
-      cursor,
-    );
+    const { transactions, nextPage } =
+      await this.transactionService.getTransactionHistory(
+        primaryAccount.publicKey,
+        limit || 50,
+        cursor,
+      );
 
     return {
       transactions,
@@ -62,7 +77,9 @@ export class TransactionController {
   }
 
   @Get('account/:publicKey')
-  @ApiOperation({ summary: 'Get transaction history for a specific public key' })
+  @ApiOperation({
+    summary: 'Get transaction history for a specific public key',
+  })
   @ApiResponse({
     status: 200,
     description: 'Returns transaction history for the specified account',
@@ -72,6 +89,10 @@ export class TransactionController {
     @Query('limit') limit?: number,
     @Query('cursor') cursor?: string,
   ) {
-    return this.transactionService.getTransactionHistory(publicKey, limit, cursor);
+    return this.transactionService.getTransactionHistory(
+      publicKey,
+      limit,
+      cursor,
+    );
   }
 }

@@ -14,6 +14,7 @@ import {
   HttpStatus,
   Logger,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
@@ -22,7 +23,6 @@ import { UsersService } from '../users/users.service';
 import * as bcrypt from 'bcrypt';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { ProfileDto } from './dto/profile.dto';
 import { GetChallengeDto, VerifyChallengeDto } from './dto/auth.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -33,8 +33,6 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
- // Added imports
-import { NotFoundException } from '@nestjs/common';
 import { ProfileResponseDto } from '../users/dto/profile-response.dto';
 
 @ApiTags('auth')
@@ -90,24 +88,20 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Email already exists' })
   async register(@Body() body: RegisterDto) {
-    // Check if user already exists
     const existingUser = await this.usersService.findByEmail(body.email);
     if (existingUser) {
       throw new ConflictException('Email already registered');
     }
 
-    // Hash password with bcrypt
     const hash = await bcrypt.hash(body.password, 10);
 
-    // Create user
     const user = await this.usersService.create({
       email: body.email,
       passwordHash: hash,
     });
 
-    // Return user without password - exclude passwordHash from response
     const { passwordHash: _, ...result } = user;
-    void _; // Mark as intentionally unused
+    void _;
     return result;
   }
 
@@ -212,7 +206,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Profile retrieved successfully',
-    type: ProfileResponseDto, // Changed from ProfileDto
+    type: ProfileResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getProfile(@Request() req: { user: { id: string } }) {
@@ -220,8 +214,7 @@ export class AuthController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    
-    // Returned the full profile with all fields
+
     return {
       id: user.id,
       email: user.email,
