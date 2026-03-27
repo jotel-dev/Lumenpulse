@@ -24,6 +24,9 @@ from src.security import (
     setup_rate_limiter,
     get_rate_limit_decorator,
 )
+from src.ml.retraining_pipeline import run_retraining, get_last_run_status
+from src.ml.model_registry import get_registry_status
+from src.analytics.correlation_engine import CorrelationEngine
 
 # Initialize structured logger
 logger = setup_logger(__name__)
@@ -262,4 +265,192 @@ if __name__ == "__main__":
         host="0.0.0.0",  # Listen on all interfaces
         port=8000,  # Default FastAPI port
         reload=True,  # Auto-reload during development
+    )
+
+
+# ---------------------------------------------------------------------------
+# Model retraining endpoints (Issue #454)
+# ---------------------------------------------------------------------------
+
+class RetrainRequest(BaseModel):
+    force: bool = False  # Skip quality gates when True
+
+
+class RetrainResponse(BaseModel):
+    status: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    models: Dict[str, Any] = {}
+    registry: Dict[str, Any] = {}
+    error: Optional[str] = None
+
+
+class ModelStatusResponse(BaseModel):
+    last_run: Dict[str, Any]
+    registry: Dict[str, Any]
+
+
+@app.post("/retrain", response_model=RetrainResponse)
+@limiter.limit("5/minute") if limiter else lambda x: x
+async def trigger_retraining(
+    body: RetrainRequest,
+    request_context: Request,
+) -> RetrainResponse:
+    """
+    Trigger an immediate model retraining run.
+
+    Runs synchronously in a thread pool so the HTTP response is returned
+    only after retraining completes (or fails). For long-running production
+    retrains, consider making this async with a task queue.
+
+    Requires X-API-Key header.
+    """
+    import asyncio
+
+    logger.info(
+        f"Retraining triggered via API | force={body.force} | "
+        f"client_ip={request_context.client.host}"
+    )
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, lambda: run_retraining(force=body.force)
+    )
+
+    return RetrainResponse(**{k: result.get(k) for k in RetrainResponse.model_fields if k in result})
+
+
+@app.get("/model/status", response_model=ModelStatusResponse)
+@limiter.limit("30/minute") if limiter else lambda x: x
+async def model_status(request_context: Request) -> ModelStatusResponse:
+    """
+    Return the current model registry state and last retraining run metadata.
+
+    Requires X-API-Key header.
+    """
+    return ModelStatusResponse(
+        last_run=get_last_run_status(),
+        registry=get_registry_status(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Correlation Analysis endpoints (Issue #452)
+# ---------------------------------------------------------------------------
+
+
+class CorrelationDataPoint(BaseModel):
+    timestamp: str
+    score: float
+
+
+class MetricDataPoint(BaseModel):
+    timestamp: str
+    value: float
+
+
+class CorrelationRequest(BaseModel):
+    sentiment_data: List[CorrelationDataPoint]
+    price_data: Optional[List[MetricDataPoint]] = None
+    volume_data: Optional[List[MetricDataPoint]] = None
+    lag_hours: int = 0
+
+
+class CorrelationResponse(BaseModel):
+    price_correlation: Optional[Dict[str, Any]] = None
+    volume_correlation: Optional[Dict[str, Any]] = None
+    summary: Dict[str, Any]
+
+
+class LagAnalysisRequest(BaseModel):
+    sentiment_data: List[CorrelationDataPoint]
+    metric_data: List[MetricDataPoint]
+    metric_type: str = "volume"
+    max_lag_hours: int = 24
+
+
+class LagAnalysisResponse(BaseModel):
+    best_lag_hours: int
+    best_correlation: float
+    lag_analysis: List[Dict[str, Any]]
+    recommendation: str
+
+
+@app.post("/correlation/analyze", response_model=CorrelationResponse)
+@limiter.limit("20/minute") if limiter else lambda x: x
+async def analyze_correlation(
+    body: CorrelationRequest,
+    request_context: Request,
+) -> CorrelationResponse:
+    """
+    Analyze correlation between sentiment and price/volume data.
+
+    Returns correlation scores (-1 to 1) and scatter plot data points.
+    Requires X-API-Key header.
+    """
+    sentiment_list = [{"timestamp": dp.timestamp, "score": dp.score} for dp in body.sentiment_data]
+    price_list = (
+        [{"timestamp": dp.timestamp, "value": dp.value} for dp in body.price_data]
+        if body.price_data
+        else []
+    )
+    volume_list = (
+        [{"timestamp": dp.timestamp, "value": dp.value} for dp in body.volume_data]
+        if body.volume_data
+        else []
+    )
+
+    logger.info(
+        f"Correlation analysis requested | sentiment_points={len(sentiment_list)} | "
+        f"price_points={len(price_list)} | volume_points={len(volume_list)} | "
+        f"lag_hours={body.lag_hours} | client_ip={request_context.client.host}"
+    )
+
+    result = CorrelationEngine.full_analysis(
+        sentiment_data=sentiment_list,
+        price_data=price_list,
+        volume_data=volume_list,
+        lag_hours=body.lag_hours,
+    )
+
+    return CorrelationResponse(
+        price_correlation=result.get("price_correlation"),
+        volume_correlation=result.get("volume_correlation"),
+        summary=result.get("summary", {}),
+    )
+
+
+@app.post("/correlation/lag-analysis", response_model=LagAnalysisResponse)
+@limiter.limit("10/minute") if limiter else lambda x: x
+async def analyze_lag_correlation(
+    body: LagAnalysisRequest,
+    request_context: Request,
+) -> LagAnalysisResponse:
+    """
+    Analyze correlation across multiple time lags to find optimal lead time.
+
+    Returns the best lag hours and correlation strength for predicting market changes.
+    Requires X-API-Key header.
+    """
+    sentiment_list = [{"timestamp": dp.timestamp, "score": dp.score} for dp in body.sentiment_data]
+    metric_list = [{"timestamp": dp.timestamp, "value": dp.value} for dp in body.metric_data]
+
+    logger.info(
+        f"Lag correlation analysis | metric_type={body.metric_type} | "
+        f"max_lag={body.max_lag_hours}h | client_ip={request_context.client.host}"
+    )
+
+    result = CorrelationEngine.analyze_with_lags(
+        sentiment_data=sentiment_list,
+        metric_data=metric_list,
+        metric_type=body.metric_type,
+        max_lag_hours=body.max_lag_hours,
+    )
+
+    return LagAnalysisResponse(
+        best_lag_hours=result["best_lag_hours"],
+        best_correlation=result["best_correlation"],
+        lag_analysis=result["lag_analysis"],
+        recommendation=result["recommendation"],
     )
