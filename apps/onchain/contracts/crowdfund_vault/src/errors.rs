@@ -28,4 +28,10 @@ pub enum CrowdfundError {
     MilestoneAlreadyDisputed = 22,
     MilestoneNotDisputed = 23,
     MilestoneEscrowed = 24,
+    InvalidRecipient = 25,
+    UnsupportedStorageVersion = 26,
+    MigrationRequired = 27,
+    MilestoneExpired = 28,
+    RefundWindowClosed = 29,
+    RefundWindowNotOpen = 30,
 }
