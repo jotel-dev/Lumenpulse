@@ -1505,3 +1505,5 @@ impl CrowdfundVaultContract {
 mod test;
 #[cfg(test)]
 mod test_yield;
+#[cfg(test)]
+mod tests;
