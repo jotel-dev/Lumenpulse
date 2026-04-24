@@ -22,7 +22,9 @@ pub struct MaliciousToken;
 #[contractimpl]
 impl MaliciousToken {
     pub fn initialize(env: Env, vault: Address, beneficiary: Address) {
-        env.storage().instance().set(&MaliciousDataKey::Vault, &vault);
+        env.storage()
+            .instance()
+            .set(&MaliciousDataKey::Vault, &vault);
         env.storage()
             .instance()
             .set(&MaliciousDataKey::Beneficiary, &beneficiary);
@@ -62,7 +64,9 @@ impl MaliciousToken {
         let vault_client = VestingWalletContractClient::new(&env, &vault);
         let result = vault_client.claim(&beneficiary);
         let failed = matches!(result, Err(Ok(VestingError::ReentrantCall)));
-        env.storage().instance().set(&MaliciousDataKey::ReentryFailed, &failed);
+        env.storage()
+            .instance()
+            .set(&MaliciousDataKey::ReentryFailed, &failed);
 
         let current: i128 = env
             .storage()
@@ -135,7 +139,14 @@ fn setup_malicious_token_test<'a>(
 
     malicious_token_client.initialize(&contract_id, &beneficiary);
 
-    (client, admin, beneficiary, token_client, malicious_token_client, contract_id)
+    (
+        client,
+        admin,
+        beneficiary,
+        token_client,
+        malicious_token_client,
+        contract_id,
+    )
 }
 
 #[test]

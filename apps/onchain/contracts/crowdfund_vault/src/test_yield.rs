@@ -65,9 +65,15 @@ pub struct MaliciousYieldProvider;
 #[contractimpl]
 impl MaliciousYieldProvider {
     pub fn initialize(env: Env, vault: Address, project_id: u64) {
-        env.storage().instance().set(&symbol_short!("vault"), &vault);
-        env.storage().instance().set(&symbol_short!("project_id"), &project_id);
-        env.storage().instance().set(&symbol_short!("reentry_failed"), &false);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("vault"), &vault);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("project_id"), &project_id);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("reentry_failed"), &false);
     }
 
     pub fn get_reentry_failed(env: Env) -> bool {
@@ -81,7 +87,11 @@ impl MaliciousYieldProvider {
 #[contractimpl]
 impl YieldProviderTrait for MaliciousYieldProvider {
     fn deposit(env: Env, from: Address, amount: i128) {
-        let vault: Address = env.storage().instance().get(&symbol_short!("vault")).unwrap();
+        let vault: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("vault"))
+            .unwrap();
         let project_id: u64 = env
             .storage()
             .instance()
@@ -90,7 +100,9 @@ impl YieldProviderTrait for MaliciousYieldProvider {
         let vault_client = CrowdfundVaultContractClient::new(&env, &vault);
         let result = vault_client.invest_idle_funds(&from, &project_id, &amount);
         let failed = matches!(result, Err(Ok(CrowdfundError::ReentrantCall)));
-        env.storage().instance().set(&symbol_short!("reentry_failed"), &failed);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("reentry_failed"), &failed);
 
         let current: i128 = env.storage().persistent().get(&from).unwrap_or(0);
         env.storage().persistent().set(&from, &(current + amount));
@@ -204,7 +216,9 @@ fn test_invest_idle_funds_reentrancy_guard_blocks_nested_calls() {
     );
 
     client.deposit(&user, &project_id, &500_000);
-    client.invest_idle_funds(&owner, &project_id, &300_000).unwrap();
+    client
+        .invest_idle_funds(&owner, &project_id, &300_000)
+        .unwrap();
 
     let malicious_yield_client = MaliciousYieldProviderClient::new(&env, &yield_id);
     assert!(malicious_yield_client.get_reentry_failed());
