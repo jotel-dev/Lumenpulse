@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { Server } from 'http';
 import request from 'supertest';
 import { HealthController } from '../src/health/health.controller';
 import {
@@ -10,6 +11,8 @@ import {
 describe('Health Check (e2e)', () => {
   let app: INestApplication;
   let healthService: { getHealthReport: jest.Mock };
+
+  const getHttpServer = (): Server => app.getHttpServer() as Server;
 
   beforeAll(async () => {
     healthService = {
@@ -59,12 +62,14 @@ describe('Health Check (e2e)', () => {
 
     healthService.getHealthReport.mockResolvedValue(report);
 
-    const response = await request(app.getHttpServer())
+    const response = await request(getHttpServer())
       .get('/health')
       .expect(200)
       .expect('Content-Type', /json/);
 
-    expect(response.body).toEqual(report);
+    const body = response.body as LumenpulseHealthReport;
+
+    expect(body).toEqual(report);
   });
 
   it('keeps the API up when a non-critical dependency is down', async () => {
@@ -93,14 +98,16 @@ describe('Health Check (e2e)', () => {
 
     healthService.getHealthReport.mockResolvedValue(report);
 
-    const response = await request(app.getHttpServer())
+    const response = await request(getHttpServer())
       .get('/health')
       .expect(200)
       .expect('Content-Type', /json/);
 
-    expect(response.body.status).toBe('ok');
-    expect(response.body.summary).toBe('degraded');
-    expect(response.body.error.redis.status).toBe('down');
+    const body = response.body as LumenpulseHealthReport;
+
+    expect(body.status).toBe('ok');
+    expect(body.summary).toBe('degraded');
+    expect(body.error.redis.status).toBe('down');
   });
 
   it('returns 503 when the database is down', async () => {
@@ -127,6 +134,6 @@ describe('Health Check (e2e)', () => {
 
     healthService.getHealthReport.mockResolvedValue(report);
 
-    await request(app.getHttpServer()).get('/health').expect(503);
+    await request(getHttpServer()).get('/health').expect(503);
   });
 });
